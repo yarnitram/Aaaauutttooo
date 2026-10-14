@@ -1,0 +1,51 @@
+name: Auth App CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Run Typechecks and Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run Unit Tests
+        run: npm run test:unit
+
+  deploy:
+    name: Deploy to Proxmox Docker
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Execute Remote Deployment via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PROXMOX_DOCKER_HOST }}
+          username: ${{ secrets.PROXMOX_SSH_USER }}
+          key: ${{ secrets.PROXMOX_SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            cd /root/directus/auth-app
+            git pull origin main
+            docker compose build auth-app
+            docker compose up -d --no-deps auth-app
+            docker system prune -f
+            curl -f https://auth.ymatt.online/healthz || exit 1
