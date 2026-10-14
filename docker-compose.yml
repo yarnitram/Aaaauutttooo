@@ -1,0 +1,29 @@
+services:
+  auth-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auth-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      NODE_ENV: production
+      APP_URL: ${APP_URL:-https://auth.ymatt.online}
+      FRONTEND_URL: ${FRONTEND_URL:-https://ymatt.online/dashboard}
+      DIRECTUS_URL: ${DIRECTUS_URL:-https://directus.ymatt.online}
+      DIRECTUS_ADMIN_TOKEN: ${DIRECTUS_ADMIN_TOKEN:-}
+      COOKIE_SECRET: ${COOKIE_SECRET:-change-this-to-a-secure-random-string-at-least-32-chars-long}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-.ymatt.online}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      DEFAULT_MEMBER_ROLE_NAME: ${DEFAULT_MEMBER_ROLE_NAME:-Member}
+      SERVICE_ROLE_NAME: ${SERVICE_ROLE_NAME:-Service Accounts}
+      AUTH_PROVIDERS: ${AUTH_PROVIDERS:-google,github}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

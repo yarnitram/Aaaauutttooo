@@ -1,0 +1,45 @@
+# Snippet for /root/directus/docker-compose.yml on Proxmox LXC (192.168.2.6)
+# Append this service block to integrate AuthApp directly into the existing Directus Docker stack.
+
+services:
+  # Existing Directus service
+  # directus:
+  #   image: directus/directus:11.5.0
+  #   ...
+
+  auth-app:
+    build:
+      context: ./auth-app
+      dockerfile: Dockerfile
+    container_name: auth-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      HOST: "0.0.0.0"
+      NODE_ENV: "production"
+      APP_URL: "https://auth.ymatt.online"
+      FRONTEND_URL: "https://ymatt.online/dashboard"
+      DIRECTUS_URL: "https://directus.ymatt.online" # Or internal docker network: http://directus:8055
+      DIRECTUS_ADMIN_TOKEN: "${DIRECTUS_ADMIN_STATIC_TOKEN}"
+      COOKIE_SECRET: "${AUTH_APP_COOKIE_SECRET}"
+      COOKIE_DOMAIN: ".ymatt.online"
+      COOKIE_SECURE: "true"
+      DEFAULT_MEMBER_ROLE_NAME: "Member"
+      SERVICE_ROLE_NAME: "Service Accounts"
+      AUTH_PROVIDERS: "google,github"
+    networks:
+      - directus-network # Connect to shared Directus Docker network
+    depends_on:
+      - directus
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# networks:
+#   directus-network:
+#     external: true
