@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import QRCode from 'qrcode';
-import { readMe, registerUser, customEndpoint, readItems, createItem } from '@directus/sdk';
+import { readMe, registerUser, customEndpoint, readItems, createItem, passwordRequest, passwordReset, updateMe } from '@directus/sdk';
 import { createBaseDirectusClient, createUserDirectusClient } from './directus.client.js';
 import { config } from '../config/env.js';
 
@@ -316,4 +316,73 @@ export class AuthService {
     const userClient = createUserDirectusClient(token);
     return await userClient.request(createItem(collection, item));
   }
+
+  // Phase 7: Password Reset & Account Management
+  async requestPasswordReset(email: string, resetUrl?: string): Promise<{ success: boolean; message: string }> {
+    this.validateEmail(email);
+
+    try {
+      const targetResetUrl = resetUrl || `${config.appUrl}/`;
+      await this.client.request(passwordRequest(email, targetResetUrl));
+    } catch {
+      // Security: user enumeration protection - always return generic success message
+    }
+
+    return {
+      success: true,
+      message: 'If an account exists with this email, a password reset link has been sent.',
+    };
+  }
+
+  async resetPassword(token: string, password: string): Promise<{ success: boolean; message: string }> {
+    if (!token || typeof token !== 'string' || token.trim().length === 0) {
+      throw new Error('Reset token is required');
+    }
+
+    if (!password || password.length < 8) {
+      throw new Error('Password must be at least 8 characters long');
+    }
+
+    try {
+      await this.client.request(passwordReset(token.trim(), password));
+      return {
+        success: true,
+        message: 'Password has been successfully reset. You may now log in.',
+      };
+    } catch (error: any) {
+      throw new Error('Invalid or expired password reset token');
+    }
+  }
+
+  async updateUserPassword(accessToken: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    if (!accessToken) {
+      throw new Error('Access token is required');
+    }
+
+    if (!newPassword || newPassword.length < 8) {
+      throw new Error('New password must be at least 8 characters long');
+    }
+
+    const userClient = createUserDirectusClient(accessToken);
+    await userClient.request(updateMe({ password: newPassword }));
+
+    return {
+      success: true,
+      message: 'Password updated successfully',
+    };
+  }
+
+  async updateUserProfile(accessToken: string, data: { firstName?: string; lastName?: string }): Promise<any> {
+    if (!accessToken) {
+      throw new Error('Access token is required');
+    }
+
+    const payload: Record<string, any> = {};
+    if (data.firstName !== undefined) payload.first_name = data.firstName;
+    if (data.lastName !== undefined) payload.last_name = data.lastName;
+
+    const userClient = createUserDirectusClient(accessToken);
+    return await userClient.request(updateMe(payload));
+  }
 }
+

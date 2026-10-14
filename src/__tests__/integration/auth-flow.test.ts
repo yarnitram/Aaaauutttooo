@@ -55,6 +55,24 @@ describe('Auth Flow End-to-End Integration Tests', () => {
         if (!token || token === 'expired-token') throw new Error('Invalid or expired Bearer token');
         return { id: 101, ...item, created_at: new Date().toISOString() };
       }),
+      requestPasswordReset: vi.fn(async (email: string) => {
+        if (!email || !email.includes('@')) throw new Error('Invalid email format');
+        return { success: true, message: 'If an account exists with this email, a password reset link has been sent.' };
+      }),
+      resetPassword: vi.fn(async (token: string, password: string) => {
+        if (!token || token === 'invalid-token') throw new Error('Invalid or expired password reset token');
+        if (!password || password.length < 8) throw new Error('Password must be at least 8 characters long');
+        return { success: true, message: 'Password has been successfully reset. You may now log in.' };
+      }),
+      updateUserPassword: vi.fn(async (token: string, newPassword: string) => {
+        if (!token) throw new Error('Access token is required');
+        if (!newPassword || newPassword.length < 8) throw new Error('New password must be at least 8 characters long');
+        return { success: true, message: 'Password updated successfully' };
+      }),
+      updateUserProfile: vi.fn(async (token: string, data: any) => {
+        if (!token) throw new Error('Access token is required');
+        return { id: 'usr-1', email: 'user@example.com', first_name: data.firstName || 'Jane', last_name: data.lastName || 'Doe' };
+      }),
     };
 
     server = await createTestServer({
@@ -507,4 +525,142 @@ describe('Auth Flow End-to-End Integration Tests', () => {
       expect(res.statusCode).toBe(401);
     });
   });
+
+  // Phase 7: Password Reset & Account Management Integration Tests
+  describe('Phase 7: Password Reset & Account Management', () => {
+    describe('POST /api/auth/password/forgot', () => {
+      it('returns 200 with generic success message for valid email', async () => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/api/auth/password/forgot',
+          payload: { email: 'user@example.com' },
+        });
+
+        expect(res.statusCode).toBe(200);
+        const body = JSON.parse(res.body);
+        expect(body.success).toBe(true);
+        expect(body.message).toContain('password reset link has been sent');
+      });
+
+      it('returns 400 for invalid email format', async () => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/api/auth/password/forgot',
+          payload: { email: 'not-an-email' },
+        });
+
+        expect(res.statusCode).toBe(400);
+      });
+    });
+
+    describe('POST /api/auth/password/reset', () => {
+      it('resets password successfully with valid token and password', async () => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/api/auth/password/reset',
+          payload: {
+            token: 'valid-reset-token-xyz',
+            password: 'NewSecurePassword123!',
+          },
+        });
+
+        expect(res.statusCode).toBe(200);
+        const body = JSON.parse(res.body);
+        expect(body.success).toBe(true);
+        expect(body.message).toContain('Password has been successfully reset');
+      });
+
+      it('returns 400 if password is less than 8 characters', async () => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/api/auth/password/reset',
+          payload: {
+            token: 'valid-reset-token-xyz',
+            password: 'short',
+          },
+        });
+
+        expect(res.statusCode).toBe(400);
+      });
+
+      it('returns 400 for invalid or expired reset token', async () => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/api/auth/password/reset',
+          payload: {
+            token: 'invalid-token',
+            password: 'NewSecurePassword123!',
+          },
+        });
+
+        expect(res.statusCode).toBe(400);
+        const body = JSON.parse(res.body);
+        expect(body.message).toContain('Invalid or expired password reset token');
+      });
+    });
+
+    describe('PATCH /api/user/password', () => {
+      it('returns 401 when unauthenticated', async () => {
+        const res = await server.inject({
+          method: 'PATCH',
+          url: '/api/user/password',
+          payload: { newPassword: 'NewSecurePassword123!' },
+        });
+
+        expect(res.statusCode).toBe(401);
+      });
+
+      it('updates password when authenticated with valid session cookie', async () => {
+        const res = await server.inject({
+          method: 'PATCH',
+          url: '/api/user/password',
+          cookies: { session_token: 'valid-session-token' },
+          payload: { newPassword: 'BrandNewPassword123!' },
+        });
+
+        expect(res.statusCode).toBe(200);
+        const body = JSON.parse(res.body);
+        expect(body.success).toBe(true);
+        expect(body.message).toBe('Password updated successfully');
+      });
+
+      it('returns 400 if new password is too short', async () => {
+        const res = await server.inject({
+          method: 'PATCH',
+          url: '/api/user/password',
+          cookies: { session_token: 'valid-session-token' },
+          payload: { newPassword: 'short' },
+        });
+
+        expect(res.statusCode).toBe(400);
+      });
+    });
+
+    describe('PATCH /api/user/profile', () => {
+      it('returns 401 when unauthenticated', async () => {
+        const res = await server.inject({
+          method: 'PATCH',
+          url: '/api/user/profile',
+          payload: { firstName: 'Jane', lastName: 'Doe' },
+        });
+
+        expect(res.statusCode).toBe(401);
+      });
+
+      it('updates profile when authenticated', async () => {
+        const res = await server.inject({
+          method: 'PATCH',
+          url: '/api/user/profile',
+          cookies: { session_token: 'valid-session-token' },
+          payload: { firstName: 'Jane', lastName: 'Doe' },
+        });
+
+        expect(res.statusCode).toBe(200);
+        const body = JSON.parse(res.body);
+        expect(body.first_name).toBe('Jane');
+        expect(body.last_name).toBe('Doe');
+      });
+    });
+  });
 });
+

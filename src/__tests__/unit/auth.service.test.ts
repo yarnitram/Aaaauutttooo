@@ -197,4 +197,75 @@ describe('AuthService - Unit Tests', () => {
         .rejects.toThrow(/invalid or expired bearer token/i);
     });
   });
+
+  // Phase 7: Password Reset & Account Management
+  describe('Phase 7: Password Reset & Account Management', () => {
+    describe('requestPasswordReset', () => {
+      it('rejects invalid email formats', async () => {
+        await expect(authService.requestPasswordReset('bad-email'))
+          .rejects.toThrow(/invalid email format/i);
+        expect(mockDirectusClient.request).not.toHaveBeenCalled();
+      });
+
+      it('calls Directus passwordRequest with valid email', async () => {
+        mockDirectusClient.request.mockResolvedValueOnce(undefined);
+
+        const result = await authService.requestPasswordReset('user@example.com');
+        expect(result.success).toBe(true);
+        expect(result.message).toContain('password reset link has been sent');
+        expect(mockDirectusClient.request).toHaveBeenCalledTimes(1);
+      });
+
+      it('safely handles Directus errors without leaking user existence', async () => {
+        mockDirectusClient.request.mockRejectedValueOnce(new Error('User not found'));
+
+        const result = await authService.requestPasswordReset('nonexistent@example.com');
+        expect(result.success).toBe(true);
+        expect(result.message).toContain('password reset link has been sent');
+      });
+    });
+
+    describe('resetPassword', () => {
+      it('rejects missing or empty token', async () => {
+        await expect(authService.resetPassword('', 'newPassword123!'))
+          .rejects.toThrow(/reset token is required/i);
+        await expect(authService.resetPassword('   ', 'newPassword123!'))
+          .rejects.toThrow(/reset token is required/i);
+      });
+
+      it('rejects passwords shorter than 8 characters', async () => {
+        await expect(authService.resetPassword('valid-token-123', 'short'))
+          .rejects.toThrow(/at least 8 characters/i);
+      });
+
+      it('successfully resets password with valid token and password', async () => {
+        mockDirectusClient.request.mockResolvedValueOnce(undefined);
+
+        const result = await authService.resetPassword('valid-token-123', 'newPassword123!');
+        expect(result.success).toBe(true);
+        expect(result.message).toContain('Password has been successfully reset');
+        expect(mockDirectusClient.request).toHaveBeenCalledTimes(1);
+      });
+
+      it('maps Directus error to invalid or expired token message', async () => {
+        mockDirectusClient.request.mockRejectedValueOnce(new Error('TOKEN_EXPIRED'));
+
+        await expect(authService.resetPassword('expired-token', 'newPassword123!'))
+          .rejects.toThrow(/invalid or expired password reset token/i);
+      });
+    });
+
+    describe('updateUserPassword', () => {
+      it('rejects missing access token', async () => {
+        await expect(authService.updateUserPassword('', 'newPassword123!'))
+          .rejects.toThrow(/access token is required/i);
+      });
+
+      it('rejects short passwords', async () => {
+        await expect(authService.updateUserPassword('mock-access-token', 'short'))
+          .rejects.toThrow(/at least 8 characters/i);
+      });
+    });
+  });
 });
+

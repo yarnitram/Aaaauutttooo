@@ -105,6 +105,23 @@
               </button>
             </div>
           </div>
+        <!-- Change Password Section in Profile -->
+        <div class="border-t border-slate-700/60 pt-4 mb-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-slate-200">Security & Password</p>
+              <p class="text-xs text-slate-400">Update account password</p>
+            </div>
+            <button id="toggle-change-pwd-btn" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 transition">
+              Change
+            </button>
+          </div>
+          <div id="change-pwd-area" class="hidden mt-4 p-4 rounded-xl bg-slate-900/80 border border-slate-700 space-y-3">
+            <input id="profile-new-password" type="password" minlength="8" placeholder="New password (8+ chars)" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
+            <button id="confirm-change-pwd-btn" class="w-full py-2 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition">
+              Update Password
+            </button>
+          </div>
         </div>
 
         <button id="logout-btn" class="w-full py-2.5 px-4 rounded-xl font-medium text-sm bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 transition flex items-center justify-center space-x-2">
@@ -140,6 +157,11 @@
             <div class="relative">
               <i class="fa-solid fa-lock absolute left-3 top-3 text-slate-400 text-sm"></i>
               <input id="login-password" type="password" required placeholder="••••••••" class="w-full bg-slate-900/60 border border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition" />
+            </div>
+            <div class="flex justify-end mt-1.5">
+              <button type="button" id="forgot-password-link" class="text-xs text-indigo-400 hover:text-indigo-300 transition">
+                Forgot password?
+              </button>
             </div>
           </div>
 
@@ -219,6 +241,63 @@
           </button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Forgot Password Modal -->
+  <div id="forgot-password-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+    <div class="glass-card max-w-sm w-full rounded-2xl p-6 shadow-2xl border border-slate-700 animate-in fade-in zoom-in duration-150">
+      <div class="text-center mb-5">
+        <div class="w-12 h-12 rounded-full bg-indigo-600/20 text-indigo-400 flex items-center justify-center text-xl mx-auto mb-3">
+          <i class="fa-solid fa-paper-plane"></i>
+        </div>
+        <h3 class="font-bold text-lg text-white">Reset Password</h3>
+        <p class="text-xs text-slate-400 mt-1">Enter your registered email and we will send you a reset link</p>
+      </div>
+
+      <form id="forgot-password-form" class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1.5">Email Address</label>
+          <input id="forgot-email-input" type="email" required placeholder="user@example.com" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+        </div>
+        <div class="flex space-x-3">
+          <button type="button" id="cancel-forgot-btn" class="flex-1 py-2.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition">
+            Cancel
+          </button>
+          <button type="submit" id="submit-forgot-btn" class="flex-1 py-2.5 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition">
+            Send Link
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Reset Password Modal (Directus Token) -->
+  <div id="reset-password-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+    <div class="glass-card max-w-sm w-full rounded-2xl p-6 shadow-2xl border border-slate-700 animate-in fade-in zoom-in duration-150">
+      <div class="text-center mb-5">
+        <div class="w-12 h-12 rounded-full bg-emerald-600/20 text-emerald-400 flex items-center justify-center text-xl mx-auto mb-3">
+          <i class="fa-solid fa-lock-open"></i>
+        </div>
+        <h3 class="font-bold text-lg text-white">Create New Password</h3>
+        <p class="text-xs text-slate-400 mt-1">Enter your new secure password below</p>
+      </div>
+
+      <form id="reset-password-form" class="space-y-4">
+        <input type="hidden" id="reset-token-input" />
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1.5">New Password (8+ chars)</label>
+          <input id="reset-password-input" type="password" minlength="8" required placeholder="••••••••" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+        </div>
+        <div class="flex space-x-3">
+          <button type="button" id="cancel-reset-btn" class="flex-1 py-2.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition">
+            Cancel
+          </button>
+          <button type="submit" id="submit-reset-btn" class="flex-1 py-2.5 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition">
+            Save Password
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -463,6 +542,119 @@
         showAuthForms();
       }
     });
+
+    // Forgot Password Flow
+    const forgotModal = document.getElementById('forgot-password-modal');
+    document.getElementById('forgot-password-link').addEventListener('click', () => {
+      forgotModal.classList.remove('hidden');
+      document.getElementById('forgot-email-input').focus();
+    });
+
+    document.getElementById('cancel-forgot-btn').addEventListener('click', () => {
+      forgotModal.classList.add('hidden');
+    });
+
+    document.getElementById('forgot-password-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('forgot-email-input').value.trim();
+
+      try {
+        const res = await fetch('/api/auth/password/forgot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+
+        const data = await res.json();
+        forgotModal.classList.add('hidden');
+        showAlert(data.message || 'If an account exists, a reset link has been sent.', false);
+      } catch {
+        showAlert('Error sending password reset request');
+      }
+    });
+
+    // Reset Password Flow
+    const resetModal = document.getElementById('reset-password-modal');
+    document.getElementById('cancel-reset-btn').addEventListener('click', () => {
+      resetModal.classList.add('hidden');
+    });
+
+    document.getElementById('reset-password-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = document.getElementById('reset-token-input').value;
+      const password = document.getElementById('reset-password-input').value;
+
+      if (!token) {
+        showAlert('Missing password reset token');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/auth/password/reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, password }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+          resetModal.classList.add('hidden');
+          showAlert(data.message || 'Password successfully reset! Please sign in.', false);
+          // Clean token from URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+          showAuthForms();
+        } else {
+          showAlert(data.message || 'Failed to reset password');
+        }
+      } catch {
+        showAlert('Network error during password reset');
+      }
+    });
+
+    // Authenticated Password Change
+    const changePwdArea = document.getElementById('change-pwd-area');
+    document.getElementById('toggle-change-pwd-btn').addEventListener('click', () => {
+      changePwdArea.classList.toggle('hidden');
+    });
+
+    document.getElementById('confirm-change-pwd-btn').addEventListener('click', async () => {
+      const newPassword = document.getElementById('profile-new-password').value;
+
+      if (!newPassword || newPassword.length < 8) {
+        showAlert('Password must be at least 8 characters long');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/user/password', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ newPassword }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+          showAlert('Password updated successfully!', false);
+          document.getElementById('profile-new-password').value = '';
+          changePwdArea.classList.add('hidden');
+        } else {
+          showAlert(data.message || 'Failed to update password');
+        }
+      } catch {
+        showAlert('Network error updating password');
+      }
+    });
+
+    // Check for reset token in URL on boot
+    const urlParams = new URLSearchParams(window.location.search);
+    const incomingToken = urlParams.get('token');
+    if (incomingToken) {
+      document.getElementById('reset-token-input').value = incomingToken;
+      resetModal.classList.remove('hidden');
+    }
 
     // Initial check
     checkAuth();

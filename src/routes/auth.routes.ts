@@ -528,4 +528,104 @@ export async function authRoutes(server: FastifyInstance, opts: { authService?: 
 
     return reply.code(302).redirect(returnTo);
   });
+
+  // Phase 7: Password Reset Request (Forgot Password - Enumeration Protected)
+  server.post<{ Body: { email: string } }>('/api/auth/password/forgot', {
+    schema: {
+      description: 'Request a password reset email (enumeration-safe)',
+      tags: ['Authentication - Password Recovery'],
+      body: {
+        type: 'object',
+        required: ['email'],
+        properties: {
+          email: { type: 'string', format: 'email', description: 'Registered account email' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' },
+          },
+        },
+        400: {
+          type: 'object',
+          properties: {
+            statusCode: { type: 'number' },
+            error: { type: 'string' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (req, reply) => {
+    try {
+      const { email } = req.body;
+      const result = await authService.requestPasswordReset(email);
+      return reply.status(200).send(result);
+    } catch (err: any) {
+      req.log.warn(err, 'Failed to process password reset request');
+      const isFormatError = /invalid email format/i.test(err?.message || '');
+      if (isFormatError) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: err.message,
+        });
+      }
+      // Return safe message even if unexpected error
+      return reply.status(200).send({
+        success: true,
+        message: 'If an account exists with this email, a password reset link has been sent.',
+      });
+    }
+  });
+
+  // Phase 7: Password Reset Confirmation
+  server.post<{ Body: { token: string; password: string } }>('/api/auth/password/reset', {
+    schema: {
+      description: 'Reset password using token from reset email',
+      tags: ['Authentication - Password Recovery'],
+      body: {
+        type: 'object',
+        required: ['token', 'password'],
+        properties: {
+          token: { type: 'string', minLength: 1, description: 'Directus password reset token' },
+          password: { type: 'string', minLength: 8, description: 'New password (minimum 8 characters)' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' },
+          },
+        },
+        400: {
+          type: 'object',
+          properties: {
+            statusCode: { type: 'number' },
+            error: { type: 'string' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (req, reply) => {
+    try {
+      const { token, password } = req.body;
+      const result = await authService.resetPassword(token, password);
+      return reply.status(200).send(result);
+    } catch (err: any) {
+      req.log.error(err, 'Failed to reset password');
+      return reply.status(400).send({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: err.message || 'Invalid or expired password reset token',
+      });
+    }
+  });
 }
+

@@ -65,4 +65,31 @@ describe('Landing Page UI & Static Asset Integration Tests', () => {
     expect(res.body).toContain('/api/auth/oauth/github');
     expect(res.body).toContain('/documentation');
   });
+
+  it('landing page contains forgot password and reset password modals', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/',
+    });
+
+    expect(res.body).toContain('id="forgot-password-link"');
+    expect(res.body).toContain('id="forgot-password-modal"');
+    expect(res.body).toContain('id="forgot-email-input"');
+    expect(res.body).toContain('id="reset-password-modal"');
+    expect(res.body).toContain('id="reset-password-input"');
+    expect(res.body).toContain('id="reset-token-input"');
+  });
+
+  it('landing page contains profile security and change password controls', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/',
+    });
+
+    expect(res.body).toContain('id="toggle-change-pwd-btn"');
+    expect(res.body).toContain('id="change-pwd-area"');
+    expect(res.body).toContain('id="profile-new-password"');
+    expect(res.body).toContain('id="confirm-change-pwd-btn"');
+  });
 });
+
