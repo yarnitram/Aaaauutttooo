@@ -1,6 +1,10 @@
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import Fastify, { FastifyInstance } from 'fastify';
 import fastifyCookie from '@fastify/cookie';
 import fastifyCors from '@fastify/cors';
+import fastifyStatic from '@fastify/static';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
 import { config } from './config/env.js';
@@ -16,15 +20,29 @@ export interface ServerOptions {
   logger?: boolean | object;
 }
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 export async function buildServer(options: ServerOptions = {}): Promise<FastifyInstance> {
-  const server = Fastify({
-    logger: options.logger ?? (config.nodeEnv === 'development' ? {
+  let loggerOpt: boolean | object = false;
+
+  if (options.logger !== undefined) {
+    loggerOpt = options.logger;
+  } else if (config.nodeEnv === 'development') {
+    loggerOpt = {
       transport: {
         target: 'pino-pretty',
         options: { colorize: true },
       },
-    } : false),
-  });
+    };
+  }
+
+  let server: FastifyInstance;
+  try {
+    server = Fastify({ logger: loggerOpt });
+  } catch {
+    server = Fastify({ logger: true });
+  }
 
   // Register cookie parser
   await server.register(fastifyCookie, {
@@ -36,6 +54,18 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
   await server.register(fastifyCors, {
     origin: true,
     credentials: true,
+  });
+
+  // Register Static File Serving for Landing Page UI
+  const publicPath = path.resolve(__dirname, '..', 'public');
+  if (!fs.existsSync(publicPath)) {
+    fs.mkdirSync(publicPath, { recursive: true });
+  }
+
+  await server.register(fastifyStatic, {
+    root: publicPath,
+    prefix: '/',
+    index: ['index.html'],
   });
 
   // Register Swagger documentation
