@@ -54,7 +54,33 @@ export const buildApp = () => {
     }
   });
 
-  app.post('/api/v1/auth/logout', async (_request, reply) => {
+app.get('/api/v1/auth/me', async (request, reply) => {
+        try {
+          const authHeader = request.headers.authorization;
+          if (!authHeader?.startsWith('Bearer ')) {
+            return reply.status(401).send({ success: false, error: 'Missing or malformed Authorization header' });
+          }
+
+          const token = authHeader.replace('Bearer ', '');
+          
+          // Request profile directly from Directus using the user's bearer token
+          const res = await fetch(`${process.env.DIRECTUS_URL || 'http://192.168.2.6:8055'}/users/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          if (!res.ok) {
+            return reply.status(401).send({ success: false, error: 'Invalid or expired session token' });
+          }
+
+          const profile = await res.json();
+          return reply.send({ success: true, data: profile.data });
+        } catch (err: any) {
+          return reply.status(500).send({ success: false, error: err.message || 'Internal error' });
+        }
+      }); 
+
+
+ app.post('/api/v1/auth/logout', async (_request, reply) => {
     try {
       await authService.logout();
     } catch {}
