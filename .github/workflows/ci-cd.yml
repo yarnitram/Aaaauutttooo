@@ -36,22 +36,18 @@ jobs:
         run: npm run build
 
   deploy:
-    name: Deploy to Proxmox Docker
+    name: Deploy to Proxmox LXC (PM2)
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
-      - name: Execute Remote Deployment via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.PROXMOX_DOCKER_HOST }}
-          username: ${{ secrets.PROXMOX_SSH_USER }}
-          key: ${{ secrets.PROXMOX_SSH_PRIVATE_KEY }}
-          port: 22
-          script: |
-            cd /root/directus/auth-app
-            git pull origin main
-            docker compose build auth-app
-            docker compose up -d --no-deps auth-app
-            docker system prune -f
-            curl -f https://auth.ymatt.online/healthz || exit 1
+      - name: Pull, Build, Restart PM2, and Assert Health
+        run: |
+          cd /opt/auth-app
+          git fetch origin main
+          git reset --hard origin/main
+          npm ci
+          npm run build
+          pm2 restart auth-microservice || pm2 start dist/index.js --name auth-microservice
+          sleep 2
+          curl -f http://127.0.0.1:3000/healthz || exit 1
