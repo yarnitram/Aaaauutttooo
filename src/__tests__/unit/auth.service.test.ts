@@ -140,4 +140,34 @@ describe('AuthService - Unit Tests', () => {
     expect(result.access_token).toBe('new-access-token');
     expect(mockDirectusClient.refresh).toHaveBeenCalledWith('json', 'old-refresh-token');
   });
+
+  // Phase 3: Social Sign-On (OAuth 2.0 / OpenID Connect)
+  describe('Phase 3: OAuth SSO Helpers', () => {
+    it('generates and verifies valid OAuth state', () => {
+      const state = authService.generateOAuthState('google', 'https://ymatt.online/app');
+      expect(state).toBeDefined();
+
+      const verified = authService.verifyOAuthState(state);
+      expect(verified.provider).toBe('google');
+      expect(verified.returnTo).toBe('https://ymatt.online/app');
+    });
+
+    it('rejects tampered OAuth state', () => {
+      const state = authService.generateOAuthState('google');
+      const tampered = state.slice(0, -5) + 'xyz12';
+      expect(() => authService.verifyOAuthState(tampered)).toThrow(/invalid or expired oauth state/i);
+    });
+
+    it('constructs correct Directus OAuth redirect URL for allowed providers', () => {
+      const res = authService.getOAuthLoginUrl('google', '/dashboard');
+      expect(res.url).toContain('/auth/login/google?redirect=');
+      expect(res.url).toContain(encodeURIComponent('/api/auth/oauth/callback?state='));
+      expect(res.state).toBeDefined();
+    });
+
+    it('rejects unsupported OAuth providers', () => {
+      expect(() => authService.getOAuthLoginUrl('unknown_provider'))
+        .toThrow(/unsupported oauth provider/i);
+    });
+  });
 });

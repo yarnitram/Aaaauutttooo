@@ -22,6 +22,19 @@ describe('Auth Flow End-to-End Integration Tests', () => {
           throw new Error('Invalid OTP format: TOTP code must be 6 numeric digits');
         }
       }),
+      getOAuthLoginUrl: vi.fn((provider: string, returnTo?: string) => {
+        if (!['google', 'github'].includes(provider.toLowerCase())) {
+          throw new Error(`Unsupported OAuth provider: ${provider}`);
+        }
+        return {
+          url: `https://directus.ymatt.online/auth/login/${provider}?redirect=encoded-callback`,
+          state: 'mock-oauth-state',
+        };
+      }),
+      verifyOAuthState: vi.fn((state: string) => {
+        if (state === 'invalid-state') throw new Error('Invalid state');
+        return { provider: 'google', returnTo: 'https://ymatt.online/custom-dest' };
+      }),
     };
 
     server = await createTestServer({
@@ -230,6 +243,95 @@ describe('Auth Flow End-to-End Integration Tests', () => {
 
       expect(res.statusCode).toBe(200);
       expect(JSON.parse(res.body).success).toBe(true);
+    });
+  });
+
+  // Phase 3 Spec: Social Sign-On (OAuth 2.0 / OpenID Connect)
+  describe('Phase 3: Social Sign-On (OAuth 2.0 / OpenID Connect)', () => {
+    it('GET /api/auth/oauth/:provider initiates OAuth with 302 redirect', async () => {
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/auth/oauth/google',
+      });
+
+      expect(res.statusCode).toBe(302);
+      expect(res.headers.location).toContain('https://directus.ymatt.online/auth/login/google');
+    });
+
+    it('GET /api/auth/oauth/:provider?mode=json returns JSON OAuth URL for SPAs', async () => {
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/auth/oauth/github?mode=json',
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.provider).toBe('github');
+      expect(body.url).toContain('https://directus.ymatt.online/auth/login/github');
+    });
+
+    it('GET /api/auth/oauth/:provider rejects unsupported providers', async () => {
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/auth/oauth/unsupported_provider',
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toMatch(/unsupported oauth provider/i);
+    });
+
+    it('GET /api/auth/oauth/callback returns 401 on Directus OAuth error', async () => {
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/auth/oauth/callback?error=user_cancelled',
+      });
+
+      expect(res.statusCode).toBe(401);
+      expect(JSON.parse(res.body).message).toContain('user_cancelled');
+    });
+
+    it('GET /api/auth/oauth/callback returns 401 if access_token is missing', async () => {
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/auth/oauth/callback',
+      });
+
+      expect(res.statusCode).toBe(401);
+      expect(JSON.parse(res.body).message).toMatch(/missing access token/i);
+    });
+
+    it('GET /api/auth/oauth/callback successfully hydrates session cookies and redirects', async () => {
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/auth/oauth/callback?access_token=oauth-access-token-123&refresh_token=oauth-refresh-token-456&state=mock-oauth-state',
+      });
+
+      expect(res.statusCode).toBe(302);
+      expect(res.headers.location).toBe('https://ymatt.online/custom-dest');
+
+      const cookies = res.headers['set-cookie'];
+      expect(cookies).toBeDefined();
+      const cookieArray = Array.isArray(cookies) ? cookies : [cookies];
+      expect(cookieArray.some((c: string) => c.includes('session_token=oauth-access-token-123'))).toBe(true);
+      expect(cookieArray.some((c: string) => c.includes('refresh_token=oauth-refresh-token-456'))).toBe(true);
+      expect(cookieArray.some((c: string) => c.includes('HttpOnly'))).toBe(true);
+    });
+
+    it('GET /api/auth/oauth/callback supports mode=json with hydrated session cookies', async () => {
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/auth/oauth/callback?access_token=oauth-json-access-token&mode=json',
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.access_token).toBe('oauth-json-access-token');
+
+      const cookies = res.headers['set-cookie'];
+      const cookieArray = Array.isArray(cookies) ? cookies : [cookies];
+      expect(cookieArray.some((c: string) => c.includes('session_token=oauth-json-access-token'))).toBe(true);
     });
   });
 

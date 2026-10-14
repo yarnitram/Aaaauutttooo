@@ -399,4 +399,133 @@ export async function authRoutes(server: FastifyInstance, opts: { authService?: 
       });
     }
   });
+
+  // Phase 3: Initiate Social SSO / OAuth (Google / GitHub)
+  server.get<{ Params: { provider: string }; Querystring: { returnTo?: string; mode?: 'redirect' | 'json' } }>('/api/auth/oauth/:provider', {
+    schema: {
+      description: 'Initiate Social Sign-On (OAuth 2.0 / OpenID Connect) via Directus',
+      tags: ['Authentication - SSO'],
+      params: {
+        type: 'object',
+        required: ['provider'],
+        properties: {
+          provider: { type: 'string', description: 'OAuth provider (e.g., google, github)' },
+        },
+      },
+      querystring: {
+        type: 'object',
+        properties: {
+          returnTo: { type: 'string', description: 'URL to redirect after successful authentication' },
+          mode: { type: 'string', enum: ['redirect', 'json'], default: 'redirect' },
+        },
+      },
+    },
+  }, async (req, reply) => {
+    try {
+      const { provider } = req.params;
+      const { returnTo, mode } = req.query;
+
+      // Extract protocol and host from request if available
+      const host = req.headers.host;
+      const protocol = (req.headers['x-forwarded-proto'] as string) || (req.protocol || 'http');
+      const callbackBaseUrl = host ? `${protocol}://${host}` : undefined;
+
+      const { url, state } = authService.getOAuthLoginUrl(provider, returnTo, callbackBaseUrl);
+
+      const isJsonPreferred = mode === 'json' || req.headers.accept?.includes('application/json');
+      if (isJsonPreferred) {
+        return reply.status(200).send({
+          success: true,
+          provider,
+          url,
+          state,
+        });
+      }
+
+      return reply.code(302).redirect(url);
+    } catch (err: any) {
+      req.log.error(err);
+      return reply.status(400).send({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: err?.message || 'Failed to initiate OAuth',
+      });
+    }
+  });
+
+  // Phase 3: OAuth SSO Callback Handler
+  server.get<{ Querystring: { access_token?: string; refresh_token?: string; expires?: string; state?: string; error?: string; mode?: 'redirect' | 'json' } }>('/api/auth/oauth/callback', {
+    schema: {
+      description: 'OAuth callback receiver: sets HttpOnly session cookies and redirects to destination',
+      tags: ['Authentication - SSO'],
+      querystring: {
+        type: 'object',
+        properties: {
+          access_token: { type: 'string' },
+          refresh_token: { type: 'string' },
+          expires: { type: 'string' },
+          state: { type: 'string' },
+          error: { type: 'string' },
+          mode: { type: 'string', enum: ['redirect', 'json'] },
+        },
+      },
+    },
+  }, async (req, reply) => {
+    const { access_token, refresh_token, expires, state, error, mode } = req.query;
+
+    if (error) {
+      req.log.error(`OAuth callback error: ${error}`);
+      return reply.status(401).send({
+        statusCode: 401,
+        error: 'Unauthorized',
+        message: `OAuth authentication failed: ${error}`,
+      });
+    }
+
+    if (!access_token) {
+      return reply.status(401).send({
+        statusCode: 401,
+        error: 'Unauthorized',
+        message: 'Missing access token in OAuth callback',
+      });
+    }
+
+    // Resolve returnTo from signed state or fallback to default frontendUrl
+    let returnTo = config.frontendUrl;
+    if (state) {
+      try {
+        const verified = authService.verifyOAuthState(state);
+        if (verified.returnTo) {
+          returnTo = verified.returnTo;
+        }
+      } catch (err) {
+        req.log.warn(err, 'Failed to verify OAuth state; falling back to default destination');
+      }
+    }
+
+    // Set session cookies
+    reply.setCookie('session_token', access_token, {
+      ...cookieOptions,
+      maxAge: expires ? Math.floor(parseInt(expires, 10) / 1000) : 900,
+    });
+
+    if (refresh_token) {
+      reply.setCookie('refresh_token', refresh_token, {
+        ...cookieOptions,
+        maxAge: 60 * 60 * 24 * 7,
+      });
+    }
+
+    const isJsonPreferred = mode === 'json' || req.headers.accept?.includes('application/json');
+    if (isJsonPreferred) {
+      return reply.status(200).send({
+        success: true,
+        message: 'OAuth authentication successful',
+        access_token,
+        returnTo,
+      });
+    }
+
+    return reply.code(302).redirect(returnTo);
+  });
 }

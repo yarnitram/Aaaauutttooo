@@ -45,6 +45,22 @@ export async function seedDirectusRoles() {
       console.log(`✓ Role '${config.serviceRoleName}' already exists.`);
     }
 
+    // Re-read roles to acquire member role ID
+    const updatedRoles = await adminClient.request(readRoles({
+      fields: ['id', 'name'],
+    })) as Array<{ id: string; name: string }>;
+
+    const memberRole = updatedRoles.find(r => r.name === config.defaultMemberRoleName);
+    const serviceRole = updatedRoles.find(r => r.name === config.serviceRoleName);
+
+    console.log('\n--- Directus SSO Role Mapping Configuration ---');
+    console.log(`Member Role ID:          ${memberRole?.id || 'unknown'}`);
+    console.log(`Service Accounts Role ID: ${serviceRole?.id || 'unknown'}`);
+    console.log('\nCopy the following into /root/directus/docker-compose.yml:');
+    console.log(`AUTH_GOOGLE_DEFAULT_ROLE_ID: "${memberRole?.id || ''}"`);
+    console.log(`AUTH_GITHUB_DEFAULT_ROLE_ID: "${memberRole?.id || ''}"`);
+    console.log('------------------------------------------------\n');
+
     console.log('🎉 Role provisioning completed successfully.');
   } catch (error: any) {
     console.error('❌ Failed to provision roles:', error?.message || error);

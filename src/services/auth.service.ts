@@ -46,6 +46,49 @@ export class AuthService {
     }
   }
 
+  generateOAuthState(provider: string, returnTo?: string): string {
+    const payload = JSON.stringify({
+      provider,
+      returnTo: returnTo || config.frontendUrl,
+      exp: Date.now() + 10 * 60 * 1000,
+    });
+    const hmac = crypto.createHmac('sha256', config.cookieSecret).update(payload).digest('hex');
+    return Buffer.from(JSON.stringify({ payload, hmac })).toString('base64url');
+  }
+
+  verifyOAuthState(state: string): { provider: string; returnTo: string } {
+    try {
+      const decoded = JSON.parse(Buffer.from(state, 'base64url').toString('utf8'));
+      const expectedHmac = crypto.createHmac('sha256', config.cookieSecret).update(decoded.payload).digest('hex');
+      if (expectedHmac !== decoded.hmac) {
+        throw new Error('Invalid state signature');
+      }
+      const data = JSON.parse(decoded.payload);
+      if (Date.now() > data.exp) {
+        throw new Error('OAuth state expired');
+      }
+      return { provider: data.provider, returnTo: data.returnTo };
+    } catch {
+      throw new Error('Invalid or expired OAuth state');
+    }
+  }
+
+  getOAuthLoginUrl(provider: string, returnTo?: string, callbackBaseUrl?: string): { url: string; state: string } {
+    const normalizedProvider = provider.toLowerCase().trim();
+    if (!config.allowedOAuthProviders.includes(normalizedProvider)) {
+      throw new Error(`Unsupported OAuth provider: ${provider}. Allowed providers: ${config.allowedOAuthProviders.join(', ')}`);
+    }
+
+    const state = this.generateOAuthState(normalizedProvider, returnTo);
+    const callbackUrl = `${callbackBaseUrl || config.appUrl}/api/auth/oauth/callback?state=${encodeURIComponent(state)}`;
+    const directusOAuthUrl = `${config.directusUrl}/auth/login/${normalizedProvider}?redirect=${encodeURIComponent(callbackUrl)}`;
+
+    return {
+      url: directusOAuthUrl,
+      state,
+    };
+  }
+
   generateChallengeToken(email: string): string {
     const payload = JSON.stringify({ email, exp: Date.now() + 5 * 60 * 1000 });
     const hmac = crypto.createHmac('sha256', config.cookieSecret).update(payload).digest('hex');

@@ -13,4 +13,7 @@ export const config = {
   cookieSecure: process.env.COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
   defaultMemberRoleName: process.env.DEFAULT_MEMBER_ROLE_NAME || 'Member',
   serviceRoleName: process.env.SERVICE_ROLE_NAME || 'Service Accounts',
+  frontendUrl: process.env.FRONTEND_URL || 'https://ymatt.online/dashboard',
+  appUrl: process.env.APP_URL || 'https://auth.ymatt.online',
+  allowedOAuthProviders: (process.env.AUTH_PROVIDERS || 'google,github').split(',').map(p => p.trim().toLowerCase()),
 };
