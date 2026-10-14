@@ -16,6 +16,7 @@ describe('AuthService - Unit Tests', () => {
     authService = new AuthService(mockDirectusClient as any);
   });
 
+  // Section 5.1 Spec Tests
   it('rejects invalid email formats before contacting Directus', async () => {
     await expect(authService.login('not-an-email', 'ValidPassword123!'))
       .rejects.toThrow(/invalid email format/i);
@@ -43,8 +44,73 @@ describe('AuthService - Unit Tests', () => {
 
     const result = await authService.login('user@example.com', 'ValidPassword123!');
     expect(result.requires2FA).toBe(true);
+    expect(result.challengeToken).toBeDefined();
   });
 
+  // Phase 2 TOTP Code Validation (Exit Criteria: must be 6 numeric digits)
+  describe('TOTP Code String Validation', () => {
+    it('accepts valid 6-digit numeric TOTP codes', () => {
+      expect(() => authService.validateOTP('123456')).not.toThrow();
+      expect(() => authService.validateOTP('000123')).not.toThrow();
+      expect(() => authService.validateOTP('999999')).not.toThrow();
+    });
+
+    it('rejects codes that contain non-numeric characters', () => {
+      expect(() => authService.validateOTP('abcdef')).toThrow(/6 numeric digits/i);
+      expect(() => authService.validateOTP('12a456')).toThrow(/6 numeric digits/i);
+      expect(() => authService.validateOTP('12.456')).toThrow(/6 numeric digits/i);
+      expect(() => authService.validateOTP('12-456')).toThrow(/6 numeric digits/i);
+    });
+
+    it('rejects codes shorter than 6 digits', () => {
+      expect(() => authService.validateOTP('12345')).toThrow(/6 numeric digits/i);
+      expect(() => authService.validateOTP('1')).toThrow(/6 numeric digits/i);
+      expect(() => authService.validateOTP('')).toThrow(/6 numeric digits/i);
+    });
+
+    it('rejects codes longer than 6 digits', () => {
+      expect(() => authService.validateOTP('1234567')).toThrow(/6 numeric digits/i);
+      expect(() => authService.validateOTP('1234567890')).toThrow(/6 numeric digits/i);
+    });
+
+    it('rejects invalid OTP when provided to login', async () => {
+      await expect(authService.login('user@example.com', 'ValidPassword123!', 'invalid-otp'))
+        .rejects.toThrow(/6 numeric digits/i);
+      expect(mockDirectusClient.login).not.toHaveBeenCalled();
+    });
+
+    it('passes valid OTP through to Directus login options', async () => {
+      mockDirectusClient.login.mockResolvedValueOnce({
+        access_token: 'mock-access-token-with-otp',
+        refresh_token: 'mock-refresh-token',
+        expires: 900000,
+      });
+
+      const result = await authService.login('user@example.com', 'ValidPassword123!', '654321');
+      expect(result.access_token).toBe('mock-access-token-with-otp');
+      expect(mockDirectusClient.login).toHaveBeenCalledWith('user@example.com', 'ValidPassword123!', { otp: '654321' });
+    });
+  });
+
+  // Phase 2: 2FA Challenge Token verification
+  describe('2FA Challenge Token Handling', () => {
+    it('generates and verifies valid challenge tokens', () => {
+      const email = 'user@example.com';
+      const token = authService.generateChallengeToken(email);
+      expect(token).toBeDefined();
+
+      const decoded = authService.verifyChallengeToken(token);
+      expect(decoded.email).toBe(email);
+    });
+
+    it('rejects tampered challenge tokens', () => {
+      const token = authService.generateChallengeToken('user@example.com');
+      const tampered = token.slice(0, -4) + 'abcd';
+      expect(() => authService.verifyChallengeToken(tampered)).toThrow(/invalid or expired 2fa challenge token/i);
+    });
+  });
+
+  // Additional Registration & Session Unit Tests
   it('rejects registration with invalid email', async () => {
     await expect(authService.register({ email: 'bad-email', password: 'Password123!' }))
       .rejects.toThrow(/invalid email format/i);
