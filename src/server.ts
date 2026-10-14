@@ -7,6 +7,8 @@ import { config } from './config/env.js';
 import { healthRoutes } from './routes/health.routes.js';
 import { authRoutes } from './routes/auth.routes.js';
 import { userRoutes } from './routes/user.routes.js';
+import { webhookRoutes } from './routes/webhook.routes.js';
+import { dataRoutes } from './routes/data.routes.js';
 import { AuthService } from './services/auth.service.js';
 
 export interface ServerOptions {
@@ -85,6 +87,8 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
   await server.register(healthRoutes);
   await server.register(authRoutes, { authService: options.authService });
   await server.register(userRoutes, { authService: options.authService });
+  await server.register(webhookRoutes, { authService: options.authService });
+  await server.register(dataRoutes, { authService: options.authService });
 
   return server;
 }

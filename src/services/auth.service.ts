@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import QRCode from 'qrcode';
-import { readMe, registerUser, customEndpoint } from '@directus/sdk';
+import { readMe, registerUser, customEndpoint, readItems, createItem } from '@directus/sdk';
 import { createBaseDirectusClient, createUserDirectusClient } from './directus.client.js';
 import { config } from '../config/env.js';
 
@@ -28,6 +28,7 @@ export interface TwoFactorSetupResult {
 
 export class AuthService {
   private client: any;
+  private serviceTokenCache = new Map<string, { user: any; expiresAt: number }>();
 
   constructor(client?: any) {
     this.client = client || createBaseDirectusClient();
@@ -260,5 +261,59 @@ export class AuthService {
       success: true,
       message: 'Two-factor authentication successfully disabled',
     };
+  }
+
+  // Phase 4: Validate Static Service Token with in-memory caching
+  async validateServiceToken(token: string): Promise<any> {
+    if (!token || typeof token !== 'string' || token.trim().length === 0) {
+      throw new Error('Malformed or missing Bearer token');
+    }
+
+    const trimmedToken = token.trim();
+
+    // Check in-memory TTL cache
+    const cached = this.serviceTokenCache.get(trimmedToken);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.user;
+    }
+
+    try {
+      const userClient = createUserDirectusClient(trimmedToken);
+      const user = await userClient.request(readMe({
+        fields: ['id', 'email', 'first_name', 'last_name', 'role', 'status'],
+      }));
+
+      if (!user) {
+        throw new Error('Invalid or expired Bearer token');
+      }
+
+      // Cache token for 5 minutes
+      this.serviceTokenCache.set(trimmedToken, {
+        user,
+        expiresAt: Date.now() + 5 * 60 * 1000,
+      });
+
+      return user;
+    } catch {
+      this.serviceTokenCache.delete(trimmedToken);
+      throw new Error('Invalid or expired Bearer token');
+    }
+  }
+
+  clearServiceTokenCache(): void {
+    this.serviceTokenCache.clear();
+  }
+
+  // Phase 4: Stateless Directus Collection Data Operations
+  async getCollectionData(token: string, collection: string, query?: Record<string, any>): Promise<any> {
+    await this.validateServiceToken(token);
+    const userClient = createUserDirectusClient(token);
+    return await userClient.request(readItems(collection, query as any));
+  }
+
+  async createCollectionData(token: string, collection: string, item: Record<string, any>): Promise<any> {
+    await this.validateServiceToken(token);
+    const userClient = createUserDirectusClient(token);
+    return await userClient.request(createItem(collection, item));
   }
 }

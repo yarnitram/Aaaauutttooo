@@ -1,4 +1,5 @@
-import { createRole, readRoles } from '@directus/sdk';
+import crypto from 'node:crypto';
+import { createRole, readRoles, createUser, readUsers } from '@directus/sdk';
 import { createAdminDirectusClient } from '../services/directus.client.js';
 import { config } from '../config/env.js';
 
@@ -61,9 +62,56 @@ export async function seedDirectusRoles() {
     console.log(`AUTH_GITHUB_DEFAULT_ROLE_ID: "${memberRole?.id || ''}"`);
     console.log('------------------------------------------------\n');
 
-    console.log('🎉 Role provisioning completed successfully.');
+    // Provision Service Accounts (Hermes AI and n8n)
+    if (serviceRole?.id) {
+      const serviceUsers = [
+        {
+          email: 'hermes-agent@ymatt.online',
+          first_name: 'Hermes',
+          last_name: 'AI Agent',
+          description: 'Autonomous AI service agent running on 192.168.2.7',
+        },
+        {
+          email: 'n8n-automation@ymatt.online',
+          first_name: 'n8n',
+          last_name: 'Automation',
+          description: 'Workflow automation service running on 192.168.2.6',
+        },
+      ];
+
+      console.log('--- Provisioning Service Accounts ---');
+      for (const account of serviceUsers) {
+        const existing = await adminClient.request(readUsers({
+          filter: { email: { _eq: account.email } },
+          fields: ['id', 'email', 'token'],
+        })) as Array<{ id: string; email: string; token?: string }>;
+
+        if (existing.length === 0) {
+          const generatedToken = crypto.randomBytes(32).toString('hex');
+          await adminClient.request(createUser({
+            email: account.email,
+            first_name: account.first_name,
+            last_name: account.last_name,
+            description: account.description,
+            role: serviceRole.id,
+            status: 'active',
+            token: generatedToken,
+          }));
+          console.log(`✅ Created service account '${account.email}'`);
+          console.log(`   🔑 Static Token: ${generatedToken}`);
+        } else {
+          console.log(`✓ Service account '${account.email}' exists (ID: ${existing[0].id})`);
+          if (existing[0].token) {
+            console.log(`   🔑 Static Token: ${existing[0].token.slice(0, 8)}... (masked)`);
+          }
+        }
+      }
+      console.log('-------------------------------------\n');
+    }
+
+    console.log('🎉 Role and service account provisioning completed successfully.');
   } catch (error: any) {
-    console.error('❌ Failed to provision roles:', error?.message || error);
+    console.error('❌ Failed to provision roles and service accounts:', error?.message || error);
     process.exit(1);
   }
 }

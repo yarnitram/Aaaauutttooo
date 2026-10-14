@@ -35,6 +35,26 @@ describe('Auth Flow End-to-End Integration Tests', () => {
         if (state === 'invalid-state') throw new Error('Invalid state');
         return { provider: 'google', returnTo: 'https://ymatt.online/custom-dest' };
       }),
+      validateServiceToken: vi.fn((token: string) => {
+        if (!token || token === 'expired-token' || token === 'invalid-token') {
+          throw new Error('Invalid or expired Bearer token');
+        }
+        if (token === 'hermes-static-token') {
+          return { id: 'svc-hermes', email: 'hermes-agent@ymatt.online', role: 'Service Accounts' };
+        }
+        if (token === 'n8n-static-token') {
+          return { id: 'svc-n8n', email: 'n8n-automation@ymatt.online', role: 'Service Accounts' };
+        }
+        return { id: 'svc-generic', email: 'service@ymatt.online', role: 'Service Accounts' };
+      }),
+      getCollectionData: vi.fn(async (token: string, collection: string) => {
+        if (!token || token === 'expired-token') throw new Error('Invalid or expired Bearer token');
+        return [{ id: 1, title: 'Test Item 1' }, { id: 2, title: 'Test Item 2' }];
+      }),
+      createCollectionData: vi.fn(async (token: string, collection: string, item: any) => {
+        if (!token || token === 'expired-token') throw new Error('Invalid or expired Bearer token');
+        return { id: 101, ...item, created_at: new Date().toISOString() };
+      }),
     };
 
     server = await createTestServer({
@@ -377,5 +397,114 @@ describe('Auth Flow End-to-End Integration Tests', () => {
     const cookies = res.headers['set-cookie'];
     const cookieArray = Array.isArray(cookies) ? cookies : [cookies];
     expect(cookieArray.some((c: string) => c.includes('session_token=;') || c.includes('Max-Age=0'))).toBe(true);
+  });
+
+  // Phase 4 Spec: Service Tokens & Homelab Automation (Hermes / n8n)
+  describe('Phase 4: Service Tokens & Webhook Automation', () => {
+    it('returns HTTP 401 when Authorization header is missing', async () => {
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/webhooks/receiver',
+        payload: { event: 'ping' },
+      });
+      expect(res.statusCode).toBe(401);
+      expect(JSON.parse(res.body).message).toMatch(/missing authorization bearer header/i);
+    });
+
+    it('returns HTTP 401 when Bearer token is malformed', async () => {
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/webhooks/receiver',
+        headers: { authorization: 'Basic dXNlcjpwYXNz' },
+        payload: { event: 'ping' },
+      });
+      expect(res.statusCode).toBe(401);
+      expect(JSON.parse(res.body).message).toMatch(/malformed bearer token/i);
+    });
+
+    it('returns HTTP 401 when Bearer token is invalid or expired', async () => {
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/webhooks/receiver',
+        headers: { authorization: 'Bearer expired-token' },
+        payload: { event: 'ping' },
+      });
+      expect(res.statusCode).toBe(401);
+      expect(JSON.parse(res.body).message).toMatch(/invalid or expired bearer token/i);
+    });
+
+    it('accepts authenticated webhook from Hermes AI and attributes to service user', async () => {
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/webhooks/hermes',
+        headers: { authorization: 'Bearer hermes-static-token' },
+        payload: { event: 'ai.task.done', task_id: 'task-101' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.source).toBe('hermes');
+      expect(body.handledBy).toBe('hermes-agent@ymatt.online');
+      expect(body).toHaveProperty('eventId');
+    });
+
+    it('accepts authenticated webhook from n8n Automation and attributes to service user', async () => {
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/webhooks/n8n',
+        headers: { authorization: 'Bearer n8n-static-token' },
+        payload: { event: 'workflow.completed', execution_id: 'exec-456' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.source).toBe('n8n');
+      expect(body.handledBy).toBe('n8n-automation@ymatt.online');
+    });
+  });
+
+  // Phase 4 Spec: Service accounts can read and write authorized collections without cookie state
+  describe('Phase 4: Stateless Collection Access (No Cookies)', () => {
+    it('GET /api/data/:collection reads collection without cookie state', async () => {
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/data/articles',
+        headers: { authorization: 'Bearer hermes-static-token' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.collection).toBe('articles');
+      expect(Array.isArray(body.data)).toBe(true);
+      expect(body.data.length).toBe(2);
+    });
+
+    it('POST /api/data/:collection writes item to collection without cookie state', async () => {
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/data/articles',
+        headers: { authorization: 'Bearer n8n-static-token' },
+        payload: { title: 'Automated Homelab Status Report', status: 'published' },
+      });
+
+      expect(res.statusCode).toBe(201);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.collection).toBe('articles');
+      expect(body.data.id).toBe(101);
+      expect(body.data.title).toBe('Automated Homelab Status Report');
+    });
+
+    it('GET /api/data/:collection rejects unauthenticated request without token', async () => {
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/data/articles',
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
   });
 });

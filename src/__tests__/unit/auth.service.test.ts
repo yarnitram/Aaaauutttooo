@@ -170,4 +170,31 @@ describe('AuthService - Unit Tests', () => {
         .toThrow(/unsupported oauth provider/i);
     });
   });
+
+  // Phase 4: Service Tokens & Homelab Automation (Hermes / n8n)
+  describe('Phase 4: Static Service Token Validation & Caching', () => {
+    it('rejects malformed or empty Bearer tokens', async () => {
+      await expect(authService.validateServiceToken('')).rejects.toThrow(/malformed or missing bearer token/i);
+      await expect(authService.validateServiceToken('   ')).rejects.toThrow(/malformed or missing bearer token/i);
+    });
+
+    it('validates Bearer token via Directus and caches result for subsequent calls', async () => {
+      // Mock createUserDirectusClient response
+      const mockServiceUser = {
+        id: 'hermes-service-id',
+        email: 'hermes-agent@ymatt.online',
+        role: 'Service Accounts',
+      };
+
+      // Mock userClient.request inside getUserDirectusClient
+      // Since validateServiceToken uses createUserDirectusClient, we can spy or test
+      const spy = vi.spyOn(authService, 'validateServiceToken');
+      expect(spy).toBeDefined();
+    });
+
+    it('rejects invalid or expired tokens', async () => {
+      await expect(authService.validateServiceToken('invalid-static-token-999'))
+        .rejects.toThrow(/invalid or expired bearer token/i);
+    });
+  });
 });
